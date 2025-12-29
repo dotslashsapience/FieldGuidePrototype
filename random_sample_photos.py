@@ -7,7 +7,7 @@ from pathlib import Path
 
 src_prnt_dir = 'training_data/'
 dest_dir = Path('triage_training_data/')
-photos_to_copy = 30
+photos_to_copy = 50
 sub_dir = os.listdir(src_prnt_dir)
 
 def gen_src_directories(src_parent: str, src_sub: list) -> Generator[str, None, None]:
