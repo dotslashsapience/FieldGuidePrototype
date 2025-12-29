@@ -1,8 +1,19 @@
-
+from fastcore.all import parallel
+from fastdownload import download_url
+from pathlib import Path
+from typing import List, Tuple, Any
 import requests
+import csv
 
 BASE = "https://www.inaturalist.org/observations.json"
-
+input_file = "top_100_wa_plants.csv"
+taxon_names_dict = {} #dict that will associate the taxon_id with the scientific name.
+taxon_ids = [] #List to store just the taxon ids to make generating searches easy
+training_photos_dict = {} #dict to store urls for training photos
+test_photos_dict = {} #dict to store urls for test data
+trng_path: Path = Path("training_data")
+test_path: Path = Path("test_data")
+DownloadArg = Tuple[str, Path]
 params = {
     "taxon_id": 47126,
     "per_page": 100,
@@ -17,6 +28,8 @@ def get_observations(BASE, params: dict):
         return r.json()
     except requests.RequestException as e:
         print("request failed: ", e)
+        with open("logs/get-obs-log", "a") as file:
+            file.write(f"FAILED REQUEST: Exception: {e}")
         return None
 
 def iter_observations(base_url, base_params: dict):
@@ -29,13 +42,6 @@ def iter_observations(base_url, base_params: dict):
         yield from data #yield returns 1 item at a time from a generator iterating over results.
         page += 1
 
-import csv
-
-input_file = "top_100_wa_plants.csv"
-taxon_names_dict = {} #dict that will associate the taxon_id with the scientific name.
-taxon_ids = [] #List to store just the taxon ids to make generating searches easy
-training_photos_dict = {} #dict to store urls for training photos
-test_photos_dict = {} #dict to store urls for test data
 
 def get_taxon_ids(input_filename: str) -> None:
     with open(input_filename, 'r') as csvfile:
@@ -65,30 +71,27 @@ def get_photo_urls(base_url: str, terms: list, base_params: dict, txn_nms_dict: 
                     training_photos_dict[species].append(photo["large_url"])
                 elif len(test_photos_dict[species]) < 5:
                     test_photos_dict[species].append(photo["large_url"])
-                else: break
-            if len(test_photos_dict[species]) >= 5: break
+                else: 
+                    break
+            if len(test_photos_dict[species]) >= 5: 
+                break
         if len(test_photos_dict[species]) < 5:
             needed_photos = 5 - len(test_photos_dict[species])
             test_photos_dict[species].append(training_photos_dict[species][-needed_photos:])
 
 
-from fastcore.all import parallel
-from fastdownload import download_url
-from pathlib import Path
-from typing import List, Tuple, Any
 
-trng_path: Path = Path("training_data")
-test_path: Path = Path("test_data")
-DownloadArg = Tuple[str, Path]
 
 def download_wrapper(url_and_path: DownloadArg):
     url, path = url_and_path
     try:
         download_url(url, path, timeout=10)
     except Exception as e:
-        print(f"Failed to download: {url} to {path}")
+        print(f"Failed to download: {url} to {path}. Exception: {e}")
+        with open("logs/downloads", "a") as log:
+            log.write(f"FAILED DOWNLOAD: Exception: {e}")
 
-def process_label_group(label: str, urls: list[str], root_path: Path) -> list[Any]:
+def process_label_group(label: str, urls: list[str], root_path: Path) -> List[Any]:
     label_path: Path = root_path / label
     download_args: List[DownloadArg] = []
     for i, url in enumerate(urls):
@@ -97,7 +100,7 @@ def process_label_group(label: str, urls: list[str], root_path: Path) -> list[An
         dest_path: Path = label_path / filename
         download_args.append((url, dest_path))
     print(f"Starting downloads for **{label}** ({len(urls)} items)")
-    results: List[Any] = parallel(download_wrapper, download_args)
+    results = list(parallel(download_wrapper, download_args))
     return results
 
 def download_images(training_dict: dict, test_dict: dict, trng_root_path: Path, test_root_path: Path):
