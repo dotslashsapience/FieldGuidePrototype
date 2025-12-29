@@ -1,4 +1,4 @@
-from openai import OpenAI
+#from openai import OpenAI
 from pathlib import Path
 from typing import Any, Generator
 import os
@@ -7,9 +7,9 @@ from google import genai
 from google.genai import types
 
 
-CLIENT = genai.CLIENT()
-FILE_PRNT_PATH = "triage_training_data/unsorted"
-PROMPT = """You are an assistant that classifies photos of plant specimens into one of several categories
+CLIENT = genai.Client()
+FILE_PRNT_PATH = "/home/ctristan/Pictures/unsorted_photos/unusable"
+PROMPT1 = """You are an assistant that classifies photos of plant specimens into one of several categories
 for dataset curation. You MUST answer in strict JSON only, with no extra text. Accompanying this prompt is exactly one photo.
 Evaluate the accompanying image as follows. I will know if you hallucinate or deviate.
 
@@ -70,18 +70,54 @@ Remember:
 - No extra text outside the JSON.
 
 """
+PROMPT2 = """
+ROLE: Botanical Data Assistant.
+TASK: Filter images for a plant classifier. These are FIELD PHOTOS. The usable photos will be used to train a  ConvNext-small
+image classifier model to identify species of plant.
 
-photo_filenames = ["43.jpg",#bark
-                   "36.jpg",#full tree or unclear target
-                   "61.jpg", #usable
-                   "242.jpg", #distant
-                   "591.jpg", #insufficient detail closeup
-                   "2086.jpg", #unclear target
-                   "48.jpg", #trunk
-                   "3007.jpg", #out of scope
-                   "3010.jpg", #underexposed
-                   "3006.jpg", #out of scope
-                   "3002.jpg" #underexposed or insufficient detail
+INSTRUCTIONS:
+1. Identify the primary plant subject.
+2. If the main subject is IN FOCUS, it is USABLE.
+
+CRITERIA FOR "USABLE":
+- Focus: The main target is sharp enough to identify species.
+- Background: Other plants in the background are ACCEPTABLE as long as there is a clear target.
+- Lighting: Shadows are ACCEPTABLE if features are visible.
+- Composition: Overlapping leaves are ACCEPTABLE.
+- Sharpness: Mild Blur is ACCEPTABLE if features are visible.
+
+CRITERIA FOR "UNUSABLE":
+- Garbage: Fully blurry (motion blur).
+- Empty: No plant visible.
+- Extreme Distance: Plant is too small to see texture.
+- Darkness: Subject not visible due to low light.
+
+EDGE CASES:
+-mark for manual review
+
+OUTPUT JSON: {"usable": bool, "manual_review": bool, "filename": str}
+"""
+PROMPT3 = """
+ROLE: Machine Learning Research Assistant.
+TASK: Determine if the attached photo is usable for the purpose of training a ConvNext-small image classifier to
+correctly identify plant species. The model will be used to identify 4000 distinct species. You should only mark for manual review
+if you are uncertain of whether it is usable. If manual review is marked true, mark usable as false.
+
+OUTPUT JSON: {"usable": bool, "manual_review": bool, "filename": str, "reason": str}
+
+Omit ```JSON``` markings used for markdown rendering. Output pure json.
+"""
+photo_filenames = ["6.jpg",#bark
+                   "8.jpg",#full tree or unclear target
+                   "14.jpg", #usable
+                   "16.jpg", #distant
+                   "28.jpg", #insufficient detail closeup
+                   "30.jpg", #unclear target
+                   "33.jpg", #trunk
+                   "36.jpg", #out of scope
+                   "38.jpg", #underexposed
+                   "53.jpg", #out of scope
+                   "51.jpg" #underexposed or insufficient detail
                    ]
 
 temp_list_for_test = [
@@ -97,25 +133,25 @@ def get_img_bytes(file_path) -> bytes:
 def get_file_ids() -> Generator[tuple[bytes, str], Any, None]:
     for file in photo_filenames:
         photo_path = os.path.join(FILE_PRNT_PATH, file)
-        file_bytes = get_img_bytes
-        (photo_path)
+        file_bytes = get_img_bytes(photo_path)
         yield file_bytes,file
 
 def gen_api_calls():
     all_results = []
     for image, filename in get_file_ids():
         response = CLIENT.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-3-flash-preview",
             contents = [
             types.Part.from_bytes(
                 data=image,
                 mime_type='image/jpeg'
             ),
-            PROMPT + "file_name: " + filename
+            PROMPT3 + "file_name: " + filename
         ]
         )
         results = response.text
         print(results)
+        print()
         #results[0].update({"photo" : filename})
         all_results.append(results)
     #print(json.dumps(all_results, indent=4))
