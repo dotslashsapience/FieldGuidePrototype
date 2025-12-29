@@ -107,17 +107,17 @@ OUTPUT JSON: {"usable": bool, "manual_review": bool, "filename": str, "reason": 
 
 Omit ```JSON``` markings used for markdown rendering. Output pure json.
 """
-photo_filenames = ["6.jpg",#bark
-                   "8.jpg",#full tree or unclear target
-                   "14.jpg", #usable
-                   "16.jpg", #distant
-                   "28.jpg", #insufficient detail closeup
-                   "30.jpg", #unclear target
-                   "33.jpg", #trunk
-                   "36.jpg", #out of scope
-                   "38.jpg", #underexposed
-                   "53.jpg", #out of scope
-                   "51.jpg" #underexposed or insufficient detail
+photo_filenames = ["6.jpg",
+                   "8.jpg",
+                   "14.jpg", 
+                   "16.jpg", 
+                   "28.jpg", 
+                   "30.jpg", 
+                   "33.jpg", 
+                   "36.jpg", 
+                   "38.jpg", 
+                   "53.jpg", 
+                   "51.jpg" 
                    ]
 
 temp_list_for_test = [
