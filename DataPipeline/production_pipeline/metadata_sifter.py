@@ -3,23 +3,25 @@ import csv
 import pandas as pd
 from typing import List, Dict
 
+#Rename file to scrape_img_urls.py
+
 # =====================
 # GLOBAL CONFIGURATION
 # =====================
-PATH_TO_FILTERED_SPECIES_LIST = "../wa_plants_species_over_100obs.csv"
-PATH_TO_OBSERVATIONS = "../../observations.csv/observations.csv"
-PATH_TO_PHOTOS = "../../photos.csv/photos.csv"
-PATH_TO_FINAL_EXTRACTION_LIST = "production_image_extraction_list.csv"
-MAXIMUM_IMAGES_TO_COLLECT_PER_SPECIES = 1500
+PATH_TO_FILTERED_SPECIES_LIST = "../wa_plants_species_over_100obs.csv" #TGT_SPCS_LIST
+PATH_TO_OBSERVATIONS = "../../observations.csv/observations.csv" #OBS_METADATA
+PATH_TO_PHOTOS = "../../photos.csv/photos.csv" #IMG_METADATA
+PATH_TO_FINAL_EXTRACTION_LIST = "production_image_extraction_list.csv" #IMG_URLS_DEST
+MAXIMUM_IMAGES_TO_COLLECT_PER_SPECIES = 1500 #MAX_IMGS
 
+#Once you refactor this, the name of the function that ties it all together can be something like get_img_urls()
 def run_production_sift():
     # --- STAGE 1: LOAD TARGETS ---
-    print(f"--- STAGE 1: LOADING TARGET SPECIES ---")
+    print(f"--- STAGE 1: LOADING TARGET SPECIES ---") #ditch the f-string, those are only used for special fields
     species_df = pd.read_csv(PATH_TO_FILTERED_SPECIES_LIST)
     target_ids = set(species_df['taxon_id'].astype(str).tolist())
     taxon_to_name = dict(zip(species_df['taxon_id'].astype(str), species_df['scientific_name']))
     print(f"Targeting {len(target_ids)} species.")
-
     # --- STAGE 2: SIFT OBSERVATIONS ---
     # We map observation_uuid -> taxon_id
     valid_observation_uuids = {}
