@@ -1,114 +1,90 @@
 import os
 import csv
 import pandas as pd
-import requests
 from typing import List, Dict
 
-# ======================
+# =====================
 # GLOBAL CONFIGURATION
-# ======================
-TARGET_GEOGRAPHIC_REGION_NAME = "Washington"
-INATURALIST_PLACE_ID_FOR_WASHINGTON = 46  #
-INATURALIST_TAXON_ID_FOR_ALL_PLANTS = 47126 #
-
-# Pipeline Limits
-TOTAL_TOP_SPECIES_TO_INCLUDE_IN_MODEL = 2000
+# =====================
+PATH_TO_FILTERED_SPECIES_LIST = "../wa_plants_species_over_100obs.csv"
+PATH_TO_OBSERVATIONS = "../../observations.csv/observations.csv"
+PATH_TO_PHOTOS = "../../photos.csv/photos.csv"
+PATH_TO_FINAL_EXTRACTION_LIST = "production_image_extraction_list.csv"
 MAXIMUM_IMAGES_TO_COLLECT_PER_SPECIES = 1500
-MINIMUM_IMAGES_REQUIRED_PER_SPECIES = 200
 
-# File Paths
-PATH_TO_BURKE_HERBARIUM_MASTER_LIST = "pnw_flora_species_2nd_ed.csv"
-PATH_TO_MASSIVE_GBIF_METADATA_FILE = "observations.csv" # The 10GB+ file
-PATH_TO_FINAL_IMAGE_EXTRACTION_LIST = "production_image_extraction_list.csv"
+def run_production_sift():
+    # --- STAGE 1: LOAD TARGETS ---
+    print(f"--- STAGE 1: LOADING TARGET SPECIES ---")
+    species_df = pd.read_csv(PATH_TO_FILTERED_SPECIES_LIST)
+    target_ids = set(species_df['taxon_id'].astype(str).tolist())
+    taxon_to_name = dict(zip(species_df['taxon_id'].astype(str), species_df['scientific_name']))
+    print(f"Targeting {len(target_ids)} species.")
 
-def get_top_ranked_washington_species(target_count: int) -> List[str]:
-    """
-    Queries iNaturalist to find the most-photographed plants in WA.
-    This ensures our 'Backcountry OS' focuses on what hikers actually see.
-    """
-    print(f"--- RANKING TOP {target_count} SPECIES IN {TARGET_GEOGRAPHIC_REGION_NAME} ---")
+    # --- STAGE 2: SIFT OBSERVATIONS ---
+    # We map observation_uuid -> taxon_id
+    valid_observation_uuids = {}
+    print(f"--- STAGE 2: SIFTING OBSERVATIONS (24.5 GB) ---")
 
-    #
-    api_endpoint_url = "https://api.inaturalist.org/v1/observations/species_counts"
-    api_query_parameters = {
-        "place_id": INATURALIST_PLACE_ID_FOR_WASHINGTON,
-        "taxon_id": INATURALIST_TAXON_ID_FOR_ALL_PLANTS,
-        "per_page": 200 # Maximum allowed by iNaturalist per page
-    }
+    obs_iterator = pd.read_csv(
+        PATH_TO_OBSERVATIONS,
+        sep='\t',
+        chunksize=200000,
+        usecols=['observation_uuid', 'taxon_id', 'quality_grade']
+    )
 
-    identified_target_species_ids = []
-    page_to_request = 1
+    for chunk in obs_iterator:
+        # Ensure taxon_id is treated as a string and stripped of whitespace
+        # Handle potential NaNs by dropping them before the comparison
+        chunk = chunk.dropna(subset=['taxon_id'])
 
-    while len(identified_target_species_ids) < target_count:
-        api_query_parameters["page"] = page_to_request
-        api_response = requests.get(api_endpoint_url, params=api_query_parameters)
-        api_response.raise_for_status()
+        # Convert to string and remove .0 if it was treated as a float
+        chunk['taxon_id_str'] = chunk['taxon_id'].astype(float).astype(int).astype(str)
 
-        page_results = api_response.json().get("results", [])
-        if not page_results:
-            break
+        matches = chunk[
+            (chunk['quality_grade'] == 'research') &
+            (chunk['taxon_id_str'].isin(target_ids))
+            ]
 
-        for entry in page_results:
-            if len(identified_target_species_ids) >= target_count:
-                break
+        for _, row in matches.iterrows():
+            valid_observation_uuids[row['observation_uuid']] = row['taxon_id_str']
 
-            taxon_data = entry.get("taxon", {})
-            # Only accept species-level identifications
-            if taxon_data.get("rank") == "species":
-                identified_target_species_ids.append(str(taxon_data.get("id")))
+        print(f"Processed chunk... Total UUIDs found: {len(valid_observation_uuids)}", end='\r')
 
-        page_to_request += 1
+    # --- STAGE 3: MAPPING PHOTOS & GENERATING URLs ---
+    print(f"\n--- STAGE 3: MAPPING PHOTOS (43.5 GB) ---")
+    counts_per_species = {tid: 0 for tid in target_ids}
 
-    print(f"Identified {len(identified_target_species_ids)} species for the production model.")
-    return identified_target_species_ids
+    photo_iterator = pd.read_csv(
+        PATH_TO_PHOTOS,
+        sep='\t',
+        chunksize=200000,
+        usecols=['observation_uuid', 'photo_id', 'extension']
+    )
 
-def sift_massive_metadata_for_urls(target_species_ids: List[str]):
-    """
-    Uses 'Chunking' to process the 10GB file without crashing the laptop.
-    Extracts URLs for the Top 2000 species.
-    """
-    print(f"--- STARTING EXTRACTION FROM {PATH_TO_MASSIVE_GBIF_METADATA_FILE} ---")
+    with open(PATH_TO_FINAL_EXTRACTION_LIST, 'w', newline='', encoding='utf-8') as f:
+        writer = csv.writer(f)
+        writer.writerow(['taxon_id', 'scientific_name', 'image_url'])
 
-
-    fast_lookup_species_set = set(target_species_ids) #Checking if an ID exists
-
-    # Track how many URLs we have found so we don't exceed the 1000 limit
-    current_image_counts_per_species = {species_id: 0 for species_id in target_species_ids}
-
-    with open(PATH_TO_FINAL_IMAGE_EXTRACTION_LIST, 'w', newline='') as output_csv_file:
-        csv_writer = csv.writer(output_csv_file)
-        csv_writer.writerow(["taxon_id", "scientific_name", "image_url"])
-
-        #
-        file_chunk_iterator = pd.read_csv(
-            PATH_TO_MASSIVE_GBIF_METADATA_FILE,
-            chunksize=100000,
-            usecols=["taxon_id", "scientific_name", "image_url", "quality_grade"]
-        )
-
-        for data_chunk in file_chunk_iterator:
-            # Step 1: Only keep "Research Grade" (high quality) images
-            high_quality_only = data_chunk[data_chunk['quality_grade'] == 'research']
-
-            # Step 2: Match against our Top 2000 list
-            matches = high_quality_only[high_quality_only['taxon_id'].astype(str).isin(fast_lookup_species_set)]
+        for chunk in photo_iterator:
+            # Check if this photo belongs to one of our filtered observations
+            matches = chunk[chunk['observation_uuid'].isin(valid_observation_uuids.keys())]
 
             for _, row in matches.iterrows():
-                species_id = str(row['taxon_id'])
+                tid = valid_observation_uuids[row['observation_uuid']]
+                ext = str(row['extension']).lower()
 
-                # Step 3: Enforce the 1,000 images per species limit
-                if current_image_counts_per_species[species_id] < MAXIMUM_IMAGES_TO_COLLECT_PER_SPECIES:
-                    csv_writer.writerow([species_id, row['scientific_name'], row['image_url']])
-                    current_image_counts_per_species[species_id] += 1
+                # Check species cap and file extension
+                if ext in ['jpg', 'jpeg'] and counts_per_species[tid] < MAXIMUM_IMAGES_TO_COLLECT_PER_SPECIES:
+                    # CONSTRUCT THE URL MANUALLY [URLs are NOT PROVIDED DIRECTLY!!!]
+                    photo_id = str(row['photo_id'])
+                    generated_url = f"https://inaturalist-open-data.s3.amazonaws.com/photos/{photo_id}/medium.{ext}"
 
-    print(f"SUCCESS: Extraction List saved to {PATH_TO_FINAL_IMAGE_EXTRACTION_LIST}")
+                    writer.writerow([tid, taxon_to_name[tid], generated_url])
+                    counts_per_species[tid] += 1
 
-def main():
-    # 1. Get the Top 2000 list via API
-    target_ids = get_top_ranked_washington_species(TOTAL_TOP_SPECIES_TO_INCLUDE_IN_MODEL)
+            print(f"Scanning photos... Final URLs found: {sum(counts_per_species.values())}", end='\r')
 
-    # 2. Extract their photo URLs from the 10GB file
-    sift_massive_metadata_for_urls(target_ids)
+    print(f"\nSUCCESS: Shopping list saved to {PATH_TO_FINAL_EXTRACTION_LIST}")
 
 if __name__ == "__main__":
-    main()
+    run_production_sift()
