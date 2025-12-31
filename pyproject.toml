@@ -17,4 +17,5 @@ dev = [
     "fastcore>=1.9.8",
     "ipykernel>=7.1.0",
     "jupyterlab-widgets>=3.0.16",
+    "timm>=1.0.22",
 ]
