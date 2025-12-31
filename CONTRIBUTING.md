@@ -54,7 +54,7 @@ Example: `feat: add exponential backoff to scraper API calls`
 
  ### Style & Formatting
 
-  - Python: Follow PEP 8. Use Black for auto-formatting and SonarQube for code quality.
+  - Python: Follow PEP 8. Use Black for auto-formatting and Ruff for linting.
 
   - Indentation: 4 spaces (Python) / 2 spaces (JS). No tabs.
 
