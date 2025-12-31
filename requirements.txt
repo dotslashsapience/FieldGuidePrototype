@@ -7,3 +7,5 @@ pandas
 scikit_learn
 azure-cognitiveservices-search-imagesearch
 sentencepiece
+fastcore
+torch
