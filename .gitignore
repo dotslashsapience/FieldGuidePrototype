@@ -2,3 +2,8 @@ training_data/
 test_data/
 models/
 triage_training_data/
+*.csv
+data/
+*.txt
+*.gz
+*.zip
