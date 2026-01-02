@@ -3,22 +3,20 @@ import csv
 import pandas as pd
 from typing import List, Dict
 
-#Rename file to scrape_img_urls.py
-
 # =====================
 # GLOBAL CONFIGURATION
 # =====================
-PATH_TO_FILTERED_SPECIES_LIST = "../wa_plants_species_over_100obs.csv" #TGT_SPCS_LIST
-PATH_TO_OBSERVATIONS = "../../observations.csv/observations.csv" #OBS_METADATA
-PATH_TO_PHOTOS = "../../photos.csv/photos.csv" #IMG_METADATA
-PATH_TO_FINAL_EXTRACTION_LIST = "production_image_extraction_list.csv" #IMG_URLS_DEST
-MAXIMUM_IMAGES_TO_COLLECT_PER_SPECIES = 1500 #MAX_IMGS
+TGT_SPCS_LIST = "../wa_plants_species_over_100obs.csv"
+OBS_METADATA = "../../observations.csv/observations.csv"
+IMG_METADATA = "../../photos.csv/photos.csv"
+IMG_URLS_DEST = "production_image_extraction_list.csv" #HEADERS - taxon_id | scientific_name | image_url
+MAX_IMGS = 1500
 
-#Once you refactor this, the name of the function that ties it all together can be something like get_img_urls()
-def run_production_sift():
+
+def get_img_urls():
     # --- STAGE 1: LOAD TARGETS ---
-    print(f"--- STAGE 1: LOADING TARGET SPECIES ---") #ditch the f-string, those are only used for special fields
-    species_df = pd.read_csv(PATH_TO_FILTERED_SPECIES_LIST)
+    print("--- STAGE 1: LOADING TARGET SPECIES ---")
+    species_df = pd.read_csv(TGT_SPCS_LIST)
     target_ids = set(species_df['taxon_id'].astype(str).tolist())
     taxon_to_name = dict(zip(species_df['taxon_id'].astype(str), species_df['scientific_name']))
     print(f"Targeting {len(target_ids)} species.")
@@ -28,7 +26,7 @@ def run_production_sift():
     print(f"--- STAGE 2: SIFTING OBSERVATIONS (24.5 GB) ---")
 
     obs_iterator = pd.read_csv(
-        PATH_TO_OBSERVATIONS,
+        OBS_METADATA,
         sep='\t',
         chunksize=200000,
         usecols=['observation_uuid', 'taxon_id', 'quality_grade']
@@ -57,13 +55,13 @@ def run_production_sift():
     counts_per_species = {tid: 0 for tid in target_ids}
 
     photo_iterator = pd.read_csv(
-        PATH_TO_PHOTOS,
+        IMG_METADATA,
         sep='\t',
         chunksize=200000,
         usecols=['observation_uuid', 'photo_id', 'extension']
     )
 
-    with open(PATH_TO_FINAL_EXTRACTION_LIST, 'w', newline='', encoding='utf-8') as f:
+    with open(IMG_URLS_DEST, 'w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f)
         writer.writerow(['taxon_id', 'scientific_name', 'image_url'])
 
@@ -76,7 +74,7 @@ def run_production_sift():
                 ext = str(row['extension']).lower()
 
                 # Check species cap and file extension
-                if ext in ['jpg', 'jpeg'] and counts_per_species[tid] < MAXIMUM_IMAGES_TO_COLLECT_PER_SPECIES:
+                if ext in ['jpg', 'jpeg'] and counts_per_species[tid] < MAX_IMGS:
                     # CONSTRUCT THE URL MANUALLY [URLs are NOT PROVIDED DIRECTLY!!!]
                     photo_id = str(row['photo_id'])
                     generated_url = f"https://inaturalist-open-data.s3.amazonaws.com/photos/{photo_id}/medium.{ext}"
@@ -86,7 +84,7 @@ def run_production_sift():
 
             print(f"Scanning photos... Final URLs found: {sum(counts_per_species.values())}", end='\r')
 
-    print(f"\nSUCCESS: Shopping list saved to {PATH_TO_FINAL_EXTRACTION_LIST}")
+    print(f"\nSUCCESS: Shopping list saved to {IMG_URLS_DEST}")
 
 if __name__ == "__main__":
-    run_production_sift()
+    get_img_urls()
